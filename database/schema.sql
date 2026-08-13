@@ -39,6 +39,8 @@ CREATE TABLE IF NOT EXISTS transactions (
 
     status VARCHAR(20) NOT NULL DEFAULT 'COMPLETED',
 
+    idempotency_key VARCHAR(255),
+
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -88,3 +90,8 @@ ON transactions(reference_id);
 
 CREATE INDEX IF NOT EXISTS idx_transactions_created
 ON transactions(created_at);
+
+CREATE UNIQUE INDEX IF NOT EXISTS
+idx_transactions_idempotency_key
+ON transactions(idempotency_key)
+WHERE idempotency_key IS NOT NULL;

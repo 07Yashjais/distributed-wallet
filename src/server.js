@@ -4,12 +4,14 @@ require("dotenv").config();
 const { connectDB } = require("./config/db");
 const authRoutes = require("./routes/authRoutes");
 const walletRoutes = require("./routes/walletRoutes");
+const transferRoutes = require("./routes/transferRoutes");
 const app = express();
 
 
 app.use(express.json());
 app.use("/api/auth", authRoutes);
 app.use("/api/wallet", walletRoutes);
+app.use("/api/transfers", transferRoutes);
 app.get("/", (req, res) => {
     res.json({
         message: "Distributed Wallet API is running"
