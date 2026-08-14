@@ -1,5 +1,6 @@
 const { v4: uuidv4 } = require("uuid");
 const { pool } = require("../config/db");
+const rateLimiter = require("../middleware/rateLimiter");
 
 const transfer = async (req, res) => {
     const client = await pool.connect();
