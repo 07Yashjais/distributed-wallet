@@ -9,10 +9,28 @@ const transfer = async (req, res) => {
         const { receiverWalletId, amount } = req.body;
 
         // -----------------------------
-        // 1. Validate input
+        // 1. Get idempotency key
         // -----------------------------
 
-        if (!receiverWalletId || !amount) {
+        const idempotencyKey = req.headers["idempotency-key"];
+
+        if (!idempotencyKey) {
+            return res.status(400).json({
+                message: "Idempotency-Key header is required"
+            });
+        }
+
+        if (idempotencyKey.length > 255) {
+            return res.status(400).json({
+                message: "Idempotency-Key is too long"
+            });
+        }
+
+        // -----------------------------
+        // 2. Validate request
+        // -----------------------------
+
+        if (!receiverWalletId || amount === undefined) {
             return res.status(400).json({
                 message: "Receiver wallet and amount are required"
             });
@@ -27,11 +45,11 @@ const transfer = async (req, res) => {
         }
 
         // -----------------------------
-        // 2. Find sender wallet
+        // 3. Find sender wallet
         // -----------------------------
 
         const senderResult = await client.query(
-            `SELECT id, balance
+            `SELECT id
              FROM wallets
              WHERE user_id = $1`,
             [senderUserId]
@@ -43,35 +61,55 @@ const transfer = async (req, res) => {
             });
         }
 
-        const senderWallet = senderResult.rows[0];
+        const senderWalletId = senderResult.rows[0].id;
 
-        // Sender and receiver cannot be same
-        if (senderWallet.id === receiverWalletId) {
+        if (senderWalletId === receiverWalletId) {
             return res.status(400).json({
                 message: "Cannot transfer to the same wallet"
             });
         }
 
         // -----------------------------
-        // 3. Start database transaction
+        // 4. Start DB transaction
         // -----------------------------
 
         await client.query("BEGIN");
 
-        /*
-         * IMPORTANT:
-         * Lock wallets in deterministic order.
-         *
-         * This helps prevent deadlocks when two transfers
-         * happen in opposite directions simultaneously.
-         */
+        // -----------------------------
+        // 5. Check idempotency
+        // -----------------------------
+
+        const existingTransaction = await client.query(
+            `SELECT
+                id,
+                reference_id,
+                transaction_type,
+                status
+             FROM transactions
+             WHERE idempotency_key = $1
+             FOR UPDATE`,
+            [idempotencyKey]
+        );
+
+        if (existingTransaction.rows.length > 0) {
+            await client.query("ROLLBACK");
+
+            return res.status(200).json({
+                message: "Transaction already processed",
+                transaction: existingTransaction.rows[0]
+            });
+        }
+
+        // -----------------------------
+        // 6. Lock both wallets
+        // -----------------------------
 
         const walletIds = [
-            senderWallet.id,
+            senderWalletId,
             receiverWalletId
         ].sort();
 
-        const lockedWallets = await client.query(
+        const walletsResult = await client.query(
             `SELECT id, balance
              FROM wallets
              WHERE id = ANY($1::uuid[])
@@ -80,7 +118,7 @@ const transfer = async (req, res) => {
             [walletIds]
         );
 
-        if (lockedWallets.rows.length !== 2) {
+        if (walletsResult.rows.length !== 2) {
             await client.query("ROLLBACK");
 
             return res.status(404).json({
@@ -88,16 +126,16 @@ const transfer = async (req, res) => {
             });
         }
 
-        const sender = lockedWallets.rows.find(
-            wallet => wallet.id === senderWallet.id
+        const sender = walletsResult.rows.find(
+            wallet => wallet.id === senderWalletId
         );
 
-        const receiver = lockedWallets.rows.find(
+        const receiver = walletsResult.rows.find(
             wallet => wallet.id === receiverWalletId
         );
 
         // -----------------------------
-        // 4. Check balance
+        // 7. Check balance
         // -----------------------------
 
         if (Number(sender.balance) < transferAmount) {
@@ -109,25 +147,29 @@ const transfer = async (req, res) => {
         }
 
         // -----------------------------
-        // 5. Update balances
+        // 8. Debit sender
         // -----------------------------
 
         await client.query(
             `UPDATE wallets
              SET balance = balance - $1
              WHERE id = $2`,
-            [transferAmount, sender.id]
+            [transferAmount, senderWalletId]
         );
+
+        // -----------------------------
+        // 9. Credit receiver
+        // -----------------------------
 
         await client.query(
             `UPDATE wallets
              SET balance = balance + $1
              WHERE id = $2`,
-            [transferAmount, receiver.id]
+            [transferAmount, receiverWalletId]
         );
 
         // -----------------------------
-        // 6. Create transaction
+        // 10. Create transaction
         // -----------------------------
 
         const transactionId = uuidv4();
@@ -137,53 +179,72 @@ const transfer = async (req, res) => {
 
         await client.query(
             `INSERT INTO transactions
-            (id, reference_id, transaction_type, status)
-            VALUES ($1, $2, 'TRANSFER', 'COMPLETED')`,
+             (
+                id,
+                reference_id,
+                transaction_type,
+                status,
+                idempotency_key
+             )
+             VALUES ($1, $2, 'TRANSFER', 'COMPLETED', $3)`,
             [
                 transactionId,
-                referenceId
+                referenceId,
+                idempotencyKey
             ]
         );
 
         // -----------------------------
-        // 7. Create DEBIT ledger entry
+        // 11. DEBIT ledger entry
         // -----------------------------
 
         await client.query(
             `INSERT INTO ledger_entries
-            (id, transaction_id, wallet_id, entry_type, amount)
-            VALUES ($1, $2, $3, 'DEBIT', $4)`,
+             (
+                id,
+                transaction_id,
+                wallet_id,
+                entry_type,
+                amount
+             )
+             VALUES ($1, $2, $3, 'DEBIT', $4)`,
             [
                 uuidv4(),
                 transactionId,
-                sender.id,
+                senderWalletId,
                 transferAmount
             ]
         );
 
         // -----------------------------
-        // 8. Create CREDIT ledger entry
+        // 12. CREDIT ledger entry
         // -----------------------------
 
         await client.query(
             `INSERT INTO ledger_entries
-            (id, transaction_id, wallet_id, entry_type, amount)
-            VALUES ($1, $2, $3, 'CREDIT', $4)`,
+             (
+                id,
+                transaction_id,
+                wallet_id,
+                entry_type,
+                amount
+             )
+             VALUES ($1, $2, $3, 'CREDIT', $4)`,
             [
                 uuidv4(),
                 transactionId,
-                receiver.id,
+                receiverWalletId,
                 transferAmount
             ]
         );
 
         // -----------------------------
-        // 9. Commit everything
+        // 13. Commit
         // -----------------------------
 
         await client.query("COMMIT");
 
-        res.status(200).json({
+        return res.status(200).json({
             message: "Transfer successful",
             transactionId,
             referenceId,
@@ -192,11 +253,49 @@ const transfer = async (req, res) => {
 
     } catch (error) {
 
-        await client.query("ROLLBACK");
+        try {
+            await client.query("ROLLBACK");
+        } catch (rollbackError) {
+            console.error(
+                "Rollback error:",
+                rollbackError.message
+            );
+        }
+
+        // PostgreSQL unique violation
+        // Another request may have inserted
+        // the same idempotency key concurrently.
+        if (error.code === "23505") {
+
+            try {
+                const existingTransaction = await client.query(
+                    `SELECT
+                        id,
+                        reference_id,
+                        transaction_type,
+                        status
+                     FROM transactions
+                     WHERE idempotency_key = $1`,
+                    [req.headers["idempotency-key"]]
+                );
+
+                if (existingTransaction.rows.length > 0) {
+                    return res.status(200).json({
+                        message: "Transaction already processed",
+                        transaction: existingTransaction.rows[0]
+                    });
+                }
+            } catch (lookupError) {
+                console.error(
+                    "Idempotency lookup failed:",
+                    lookupError.message
+                );
+            }
+        }
 
         console.error("Transfer error:", error);
 
-        res.status(500).json({
+        return res.status(500).json({
             message: "Transfer failed"
         });
 
