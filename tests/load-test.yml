@@ -1,0 +1,27 @@
+config:
+  target: "http://localhost:5000"
+  phases:
+    - duration: 10
+      arrivalRate: 5
+      name: "Warm up"
+
+    - duration: 20
+      arrivalRate: 20
+      name: "Load"
+
+    - duration: 10
+      arrivalRate: 50
+      name: "High load"
+
+scenarios:
+  - name: "Transfer API"
+    flow:
+      - post:
+          url: "/api/transfers"
+          headers:
+            Authorization: "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiJhNDc3OGE4Ny1hZjQxLTRmNWYtOTViYi0wOTQwZTdmOGM3MWMiLCJlbWFpbCI6InRlc3R1c2VyQGV4YW1wbGUuY29tIiwiaWF0IjoxNzg2NzEyNDUyLCJleHAiOjE3ODY3MTYwNTJ9.zQCjelQTCn-UKtEVsCYVgYM1496L5yBDiZIoY8-JdJA"
+            Content-Type: "application/json"
+            Idempotency-Key: "load-{{ $randomNumber(1, 100000000) }}"
+          json:
+            receiverWalletId: "6e673568-5ca7-454b-a97f-7005ba4b68d1"
+            amount: 1

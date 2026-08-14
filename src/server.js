@@ -6,6 +6,7 @@ const authRoutes = require("./routes/authRoutes");
 const walletRoutes = require("./routes/walletRoutes");
 const transferRoutes = require("./routes/transferRoutes");
 const transactionRoutes = require("./routes/transactionRoutes");
+const { connectKafka } = require("./config/kafka");
 const app = express();
 
 
@@ -24,6 +25,8 @@ const PORT = process.env.PORT || 5000;
 
 const startServer = async () => {
     await connectDB();
+
+    await connectKafka();
 
     app.listen(PORT, () => {
         console.log(`Server running on port ${PORT}`);

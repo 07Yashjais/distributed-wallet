@@ -2,13 +2,20 @@ const { v4: uuidv4 } = require("uuid");
 const { pool } = require("../config/db");
 const rateLimiter = require("../middleware/rateLimiter");
 
+
 const transfer = async (req, res) => {
     const client = await pool.connect();
 
     try {
         const senderUserId = req.user.userId;
         const { receiverWalletId, amount } = req.body;
+        const transferAmount = Number(amount);
 
+        if (!receiverWalletId || !transferAmount || transferAmount <= 0) {
+    return res.status(400).json({
+        message: "Invalid receiver wallet or amount"
+    });
+}
         // -----------------------------
         // 1. Get idempotency key
         // -----------------------------
@@ -37,7 +44,7 @@ const transfer = async (req, res) => {
             });
         }
 
-        const transferAmount = Number(amount);
+        
 
         if (!Number.isFinite(transferAmount) || transferAmount <= 0) {
             return res.status(400).json({
@@ -244,6 +251,35 @@ const transfer = async (req, res) => {
         // -----------------------------
 
         await client.query("COMMIT");
+        await client.query(
+    `
+    INSERT INTO outbox_events
+    (
+        id,
+        event_type,
+        aggregate_type,
+        aggregate_id,
+        payload
+    )
+    VALUES ($1, $2, $3, $4, $5)
+    `,
+    [
+        uuidv4(),
+        "TRANSFER_COMPLETED",
+        "TRANSACTION",
+        transactionId,
+        JSON.stringify({
+            event: "TRANSFER_COMPLETED",
+            transactionId,
+            referenceId,
+            senderWalletId: senderWallet.id,
+            receiverWalletId: receiverWallet.id,
+            amount: transferAmount,
+            timestamp: new Date().toISOString()
+        })
+    ]
+);
+
 
         return res.status(200).json({
             message: "Transfer successful",
@@ -262,6 +298,8 @@ const transfer = async (req, res) => {
                 rollbackError.message
             );
         }
+        
+
 
         // PostgreSQL unique violation
         // Another request may have inserted
