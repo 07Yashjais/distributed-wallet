@@ -9,16 +9,15 @@ const transferRoutes = require("./routes/transferRoutes");
 const transactionRoutes = require("./routes/transactionRoutes");
 const healthRoutes = require("./routes/healthRoutes");
 
-const { connectKafka } = require("./config/kafka");
 const redis = require("./config/redis");
-
+const { connectKafka } = require("./config/kafka");
 const app = express();
 
 app.use(express.json());
 
 app.use((req, res, next) => {
-    const origin = process.env.CORS_ORIGIN === "*" 
-        ? "*" 
+    const origin = process.env.CORS_ORIGIN === "*"
+        ? "*"
         : (process.env.CORS_ORIGIN || req.headers.origin || "http://localhost:5173");
     res.header("Access-Control-Allow-Origin", origin);
     res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
@@ -53,11 +52,14 @@ const startServer = async () => {
         await connectDB();
 
         await connectKafka();
+        console.log("Connecting to Kafka...");
+
+        await connectKafka();
+
+        console.log("Kafka connection finished");
 
         server = app.listen(PORT, () => {
-            console.log(
-                `Server running on port ${PORT}`
-            );
+            console.log(`Server running on port ${PORT}`);
         });
 
     } catch (error) {

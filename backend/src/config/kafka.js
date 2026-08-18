@@ -1,4 +1,6 @@
-const { Kafka } = require("kafkajs");
+const fs = require("fs");
+const path = require("path");
+const { Kafka, Partitioners } = require("kafkajs");
 
 const brokers = (process.env.KAFKA_BROKER || "localhost:9092")
     .split(",")
@@ -6,11 +8,16 @@ const brokers = (process.env.KAFKA_BROKER || "localhost:9092")
     .filter(Boolean);
 
 const useSSL = process.env.KAFKA_SSL === "true" ||
-    brokers.some(b => b.includes("upstash.io") || b.includes("confluent.cloud") || b.includes("aivencloud.com"));
+    brokers.some(b =>
+        b.includes("upstash.io") ||
+        b.includes("confluent.cloud") ||
+        b.includes("aivencloud.com")
+    );
 
 const kafkaConfig = {
     clientId: "distributed-wallet",
     brokers,
+
     retry: {
         initialRetryTime: 500,
         retries: 15
@@ -18,12 +25,25 @@ const kafkaConfig = {
 };
 
 if (useSSL) {
-    kafkaConfig.ssl = true;
+    kafkaConfig.ssl = {
+        ca: [
+            fs.readFileSync(
+                path.join(__dirname, "../../certs/ca.pem"),
+                "utf-8"
+            )
+        ]
+    };
 }
 
-if (process.env.KAFKA_SASL_USERNAME && process.env.KAFKA_SASL_PASSWORD) {
+if (
+    process.env.KAFKA_SASL_USERNAME &&
+    process.env.KAFKA_SASL_PASSWORD
+) {
     kafkaConfig.sasl = {
-        mechanism: (process.env.KAFKA_SASL_MECHANISM || "scram-sha-256").toLowerCase(),
+        mechanism: (
+            process.env.KAFKA_SASL_MECHANISM || "plain"
+        ).toLowerCase(),
+
         username: process.env.KAFKA_SASL_USERNAME,
         password: process.env.KAFKA_SASL_PASSWORD
     };
@@ -31,7 +51,9 @@ if (process.env.KAFKA_SASL_USERNAME && process.env.KAFKA_SASL_PASSWORD) {
 
 const kafka = new Kafka(kafkaConfig);
 
-const producer = kafka.producer();
+const producer = kafka.producer({
+    createPartitioner: Partitioners.LegacyPartitioner
+});
 
 let connected = false;
 
@@ -43,12 +65,21 @@ const connectKafka = async (maxRetries = 10, delayMs = 2000) => {
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
         try {
             await producer.connect();
+
             connected = true;
+
             console.log("Kafka producer connected");
+
             return;
         } catch (error) {
-            console.warn(`Kafka connection attempt ${attempt}/${maxRetries} failed: ${error.message}`);
-            if (attempt === maxRetries) throw error;
+            console.warn(
+                `Kafka connection attempt ${attempt}/${maxRetries} failed: ${error.message}`
+            );
+
+            if (attempt === maxRetries) {
+                throw error;
+            }
+
             await new Promise(res => setTimeout(res, delayMs));
         }
     }
@@ -59,6 +90,7 @@ const publishEvent = async (topic, event) => {
 
     await producer.send({
         topic,
+
         messages: [
             {
                 key: event.transactionId || undefined,

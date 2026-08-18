@@ -247,39 +247,41 @@ const transfer = async (req, res) => {
         );
 
         // -----------------------------
-        // 13. Commit
+        // 13. Outbox Event (Transactional Outbox Pattern)
+        // -----------------------------
+
+        await client.query(
+            `INSERT INTO outbox_events
+            (
+                id,
+                event_type,
+                aggregate_type,
+                aggregate_id,
+                payload
+            )
+            VALUES ($1, $2, $3, $4, $5)`,
+            [
+                uuidv4(),
+                "TRANSFER_COMPLETED",
+                "TRANSACTION",
+                transactionId,
+                JSON.stringify({
+                    event: "TRANSFER_COMPLETED",
+                    transactionId,
+                    referenceId,
+                    senderWalletId,
+                    receiverWalletId,
+                    amount: transferAmount,
+                    timestamp: new Date().toISOString()
+                })
+            ]
+        );
+
+        // -----------------------------
+        // 14. Commit
         // -----------------------------
 
         await client.query("COMMIT");
-        await client.query(
-    `
-    INSERT INTO outbox_events
-    (
-        id,
-        event_type,
-        aggregate_type,
-        aggregate_id,
-        payload
-    )
-    VALUES ($1, $2, $3, $4, $5)
-    `,
-    [
-        uuidv4(),
-        "TRANSFER_COMPLETED",
-        "TRANSACTION",
-        transactionId,
-        JSON.stringify({
-            event: "TRANSFER_COMPLETED",
-            transactionId,
-            referenceId,
-            senderWalletId: senderWallet.id,
-            receiverWalletId: receiverWallet.id,
-            amount: transferAmount,
-            timestamp: new Date().toISOString()
-        })
-    ]
-);
-
 
         return res.status(200).json({
             message: "Transfer successful",
