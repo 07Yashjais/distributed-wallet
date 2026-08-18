@@ -1,0 +1,31 @@
+{
+  "name": "backend",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "start:outbox": "node src/workers/outboxWorker.js",
+    "start:worker": "node src/workers/transactionWorker.js",
+    "start:all": "node src/server.js & node src/workers/outboxWorker.js & node src/workers/transactionWorker.js",
+    "db:init": "node database/initDB.js",
+    "dev": "nodemon src/server.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "bcrypt": "^6.0.0",
+    "dotenv": "^17.4.2",
+    "express": "^5.2.1",
+    "ioredis": "^6.0.0",
+    "jsonwebtoken": "^9.0.3",
+    "kafkajs": "^2.2.4",
+    "pg": "^8.23.0",
+    "uuid": "^14.0.1"
+  },
+  "devDependencies": {
+    "artillery": "^2.0.34",
+    "nodemon": "^3.1.14"
+  }
+}
