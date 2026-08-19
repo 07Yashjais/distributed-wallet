@@ -1,4 +1,4 @@
-const API_BASE = import.meta.env.VITE_API_URL || "https://distributed-wallet-2.onrender.com";
+const API_BASE = import.meta.env.VITE_API_URL || "https://distributed-wallet-2.onrender.com/api";
 
 async function request(endpoint, options = {}) {
   const token = localStorage.getItem('token');
