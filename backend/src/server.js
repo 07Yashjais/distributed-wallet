@@ -19,9 +19,10 @@ const app = express();
 // CORS
 // =====================================================
 
-const allowedOrigin =
-    process.env.CORS_ORIGIN ||
-    "https://distributed-wallet-4p74.vercel.app";
+const allowedOrigins = [
+    "https://distributed-wallet-4p74.vercel.app",
+    "https://distributed-wallet.vercel.app"
+];
 
 app.use((req, res, next) => {
 
