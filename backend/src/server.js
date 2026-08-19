@@ -18,7 +18,7 @@ app.use(express.json());
 app.use((req, res, next) => {
     const origin = process.env.CORS_ORIGIN === "*"
         ? "*"
-        : (process.env.CORS_ORIGIN || req.headers.origin || "http://localhost:5173");
+        : (process.env.CORS_ORIGIN || req.headers.origin || "https://distributed-wallet-4p74.vercel.app");
     res.header("Access-Control-Allow-Origin", origin);
     res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
     res.header("Access-Control-Allow-Headers", "Content-Type, Authorization, Idempotency-Key");
@@ -52,7 +52,7 @@ const startServer = async () => {
         await connectDB();
 
         await connectKafka();
-       
+
 
         server = app.listen(PORT, () => {
             console.log(`Server running on port ${PORT}`);
