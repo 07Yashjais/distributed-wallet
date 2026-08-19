@@ -21,7 +21,7 @@ const app = express();
 
 const allowedOrigin =
     process.env.CORS_ORIGIN ||
-    "https://distributed-wallet-4p74.vercel.app/";
+    "https://distributed-wallet-4p74.vercel.app";
 
 app.use((req, res, next) => {
 
