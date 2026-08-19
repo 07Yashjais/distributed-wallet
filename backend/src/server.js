@@ -14,6 +14,8 @@ const redis = require("./config/redis");
 const { connectKafka } = require("./config/kafka");
 const app = express();
 
+app.options("*", cors());
+
 app.use(cors({
     origin: true,
     methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
