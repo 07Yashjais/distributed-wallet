@@ -14,12 +14,8 @@ const redis = require("./config/redis");
 const { connectKafka } = require("./config/kafka");
 const app = express();
 
-const allowedOrigins = process.env.CORS_ORIGIN === "*"
-    ? "*"
-    : (process.env.CORS_ORIGIN || "https://distributed-wallet-4p74.vercel.app").split(",").map(s => s.trim());
-
 app.use(cors({
-    origin: allowedOrigins === "*" ? "*" : allowedOrigins,
+    origin: true,
     methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization", "Idempotency-Key"],
     credentials: true,
