@@ -1,7 +1,9 @@
 import { useState, useEffect, useCallback } from 'react';
+import { useLocation } from 'react-router-dom';
 import { api } from '../api/client';
 import Sidebar from '../components/Sidebar';
 import Topbar from '../components/Topbar';
+import BottomNav from '../components/BottomNav';
 import BalanceCard from '../components/BalanceCard';
 import QuickActions from '../components/QuickActions';
 import SendMoneyCard from '../components/SendMoneyCard';
@@ -10,10 +12,32 @@ import SpendingOverview from '../components/SpendingOverview';
 import MonthlySummary from '../components/MonthlySummary';
 import DepositModal from '../components/DepositModal';
 import WithdrawModal from '../components/WithdrawModal';
+import AccountPage from './AccountPage';
+import TransactionsPage from './TransactionsPage';
+import SendMoneyPage from './SendMoneyPage';
 import { Loader2 } from 'lucide-react';
 
+const SIDEBAR_WIDTH = 260;
+
+function useIsDesktop() {
+  const [isDesktop, setIsDesktop] = useState(
+    typeof window !== 'undefined' ? window.innerWidth >= 1024 : false
+  );
+
+  useEffect(() => {
+    const handleResize = () => setIsDesktop(window.innerWidth >= 1024);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  return isDesktop;
+}
+
 export default function DashboardLayout() {
-  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const location = useLocation();
+  const currentPath = location.pathname;
+  const isDesktop = useIsDesktop();
+
   const [wallet, setWallet] = useState(null);
   const [transactions, setTransactions] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -56,53 +80,76 @@ export default function DashboardLayout() {
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center" style={{ background: '#F5F4FC' }}>
-        <Loader2 className="w-8 h-8 animate-spin" style={{ color: '#6C4CE0' }} />
+        <Loader2 className="w-10 h-10 animate-spin" style={{ color: '#6C4CE0' }} />
       </div>
     );
   }
 
-  return (
-    <div className="min-h-screen" style={{ background: '#F5F4FC' }}>
-      <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
-
-      <main className="lg:ml-[260px] min-h-screen">
-        <div style={{ padding: '0 28px' }}>
-          <Topbar onMenuToggle={() => setSidebarOpen(!sidebarOpen)} />
-
+  const renderPage = () => {
+    switch (currentPath) {
+      case '/account':
+        return <AccountPage />;
+      case '/transactions':
+        return <TransactionsPage />;
+      case '/send':
+        return <SendMoneyPage onSuccess={fetchData} />;
+      default:
+        return (
           <div
-            className="grid grid-cols-1 lg:grid-cols-12"
-            style={{ gap: 20, paddingBottom: 32 }}
+            className="grid grid-cols-1 xl:grid-cols-12"
+            style={{ gap: 20, paddingTop: 8, paddingBottom: 48 }}
           >
-            <div className="lg:col-span-7">
+            <div className="xl:col-span-8">
               <BalanceCard wallet={wallet} />
             </div>
-            <div className="lg:col-span-5">
+            <div className="xl:col-span-4">
               <QuickActions activeAction={activeAction} onActionClick={handleActionClick} />
             </div>
-
-            <div className="lg:col-span-5">
+            <div className="xl:col-span-4">
               <SendMoneyCard onSuccess={fetchData} />
             </div>
-            <div className="lg:col-span-7">
+            <div className="xl:col-span-8">
               <RecentTransactions transactions={transactions} />
             </div>
-
-            <div className="lg:col-span-5">
+            <div className="xl:col-span-4">
               <SpendingOverview transactions={transactions} />
             </div>
-            <div className="lg:col-span-7">
+            <div className="xl:col-span-8">
               <MonthlySummary transactions={transactions} />
             </div>
           </div>
-        </div>
-      </main>
+        );
+    }
+  };
 
+  return (
+    <div className="min-h-screen" style={{ background: '#F5F4FC' }}>
+      {/* Desktop Sidebar */}
+      <Sidebar />
+
+      {/* Main Content */}
+      <div
+        className="min-h-screen flex flex-col"
+        style={{ marginLeft: isDesktop ? SIDEBAR_WIDTH : 0 }}
+      >
+        <div style={{ maxWidth: 1200, width: '100%', margin: '0 auto', padding: '0 16px' }}>
+          {/* Responsive padding */}
+          <div className="sm:px-2 lg:px-4">
+            <Topbar />
+            {renderPage()}
+          </div>
+        </div>
+      </div>
+
+      {/* Mobile Bottom Nav */}
+      <BottomNav />
+
+      {/* Modals */}
       <DepositModal
         isOpen={depositOpen}
         onClose={() => setDepositOpen(false)}
         onSuccess={fetchData}
       />
-
       <WithdrawModal
         isOpen={withdrawOpen}
         onClose={() => setWithdrawOpen(false)}

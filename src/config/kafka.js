@@ -1,13 +1,39 @@
-const { Kafka } = require("kafkajs");
+const { Kafka, Partitioners } = require("kafkajs");
 
-const kafka = new Kafka({
+const brokers = (process.env.KAFKA_BROKER || "localhost:9092")
+    .split(",")
+    .map(b => b.trim())
+    .filter(Boolean);
+
+const useSSL = process.env.KAFKA_SSL === "true" ||
+    brokers.some(b => b.includes("upstash.io") || b.includes("confluent.cloud") || b.includes("aivencloud.com"));
+
+const kafkaConfig = {
     clientId: "distributed-wallet",
-    brokers: [
-        process.env.KAFKA_BROKER || "localhost:9092"
-    ]
-});
+    brokers,
+    retry: {
+        initialRetryTime: 500,
+        retries: 15
+    }
+};
 
-const producer = kafka.producer();
+if (useSSL) {
+    kafkaConfig.ssl = true;
+}
+
+if (process.env.KAFKA_SASL_USERNAME && process.env.KAFKA_SASL_PASSWORD) {
+    kafkaConfig.sasl = {
+        mechanism: (process.env.KAFKA_SASL_MECHANISM || "scram-sha-256").toLowerCase(),
+        username: process.env.KAFKA_SASL_USERNAME,
+        password: process.env.KAFKA_SASL_PASSWORD
+    };
+}
+
+const kafka = new Kafka(kafkaConfig);
+
+const producer = kafka.producer({
+    createPartitioner: Partitioners.LegacyPartitioner
+});
 
 let connected = false;
 

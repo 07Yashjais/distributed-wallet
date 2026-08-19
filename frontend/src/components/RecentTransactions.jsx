@@ -1,3 +1,4 @@
+import { useNavigate } from 'react-router-dom';
 import { ArrowDownToLine, ArrowUpFromLine, Send, ChevronRight } from 'lucide-react';
 
 const TYPE_CONFIG = {
@@ -88,6 +89,7 @@ function TransactionRow({ transaction }) {
 }
 
 export default function RecentTransactions({ transactions }) {
+  const navigate = useNavigate();
   const recent = transactions.slice(0, 5);
 
   return (
@@ -95,7 +97,8 @@ export default function RecentTransactions({ transactions }) {
       <div className="flex items-center justify-between mb-4">
         <h3 className="text-base font-semibold" style={{ color: '#1E1B2E' }}>Recent Transactions</h3>
         <button
-          className="text-[13px] rounded-full px-3 py-1.5 transition-colors"
+          onClick={() => navigate('/transactions')}
+          className="text-[13px] rounded-full px-3 py-1.5 transition-colors cursor-pointer"
           style={{ background: '#F0EFFB', color: '#4B4B5A', border: 'none' }}
           onMouseEnter={(e) => { e.currentTarget.style.background = '#EDEBF7'; }}
           onMouseLeave={(e) => { e.currentTarget.style.background = '#F0EFFB'; }}
@@ -118,7 +121,8 @@ export default function RecentTransactions({ transactions }) {
 
       {transactions.length > 5 && (
         <button
-          className="w-full text-center text-sm font-medium mt-4 flex items-center justify-center gap-1 hover:underline"
+          onClick={() => navigate('/transactions')}
+          className="w-full text-center text-sm font-medium mt-4 flex items-center justify-center gap-1 hover:underline cursor-pointer"
           style={{ color: '#6C4CE0', background: 'none', border: 'none' }}
         >
           View All Transactions

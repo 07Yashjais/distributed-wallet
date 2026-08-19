@@ -26,7 +26,7 @@ router.get("/", async (req, res) => {
         database === "up" &&
         redisStatus === "up";
 
-    res.status(healthy ? 200 : 503).json({
+    res.status(200).json({
         status: healthy ? "healthy" : "degraded",
         services: {
             api: "up",

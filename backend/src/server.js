@@ -52,11 +52,7 @@ const startServer = async () => {
         await connectDB();
 
         await connectKafka();
-        console.log("Connecting to Kafka...");
-
-        await connectKafka();
-
-        console.log("Kafka connection finished");
+       
 
         server = app.listen(PORT, () => {
             console.log(`Server running on port ${PORT}`);

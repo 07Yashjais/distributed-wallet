@@ -33,36 +33,34 @@ export default function DepositModal({ isOpen, onClose, onSuccess }) {
         </div>
       )}
 
-      <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+      <form onSubmit={handleSubmit} className="flex flex-col gap-6">
         <div>
-          <label className="block text-[13px] font-medium mb-1.5" style={{ color: '#1E1B2E' }}>Amount (₹)</label>
-          <input
-            type="number"
-            value={amount}
-            onChange={(e) => setAmount(e.target.value)}
-            placeholder="Enter deposit amount"
-            min="1"
-            step="0.01"
-            required
-            autoFocus
-            className="input-field"
-          />
+          <label className="block text-[14px] font-semibold mb-2" style={{ color: '#1E1B2E' }}>Amount (₹)</label>
+          <div className="relative">
+            <span className="absolute left-4 top-1/2 -translate-y-1/2 text-lg font-medium" style={{ color: '#9B98A8' }}>₹</span>
+            <input
+              type="number"
+              value={amount}
+              onChange={(e) => setAmount(e.target.value)}
+              placeholder="0.00"
+              min="1"
+              step="0.01"
+              required
+              autoFocus
+              className="input-field input-field-icon"
+              style={{ paddingLeft: '40px', fontSize: '16px', padding: '14px 16px 14px 40px' }}
+            />
+          </div>
         </div>
 
         <button
           type="submit"
           disabled={loading}
-          className="w-full font-semibold rounded-xl px-5 py-3.5 flex items-center justify-center gap-2 transition-all"
-          style={{
-            background: '#16A34A',
-            color: 'white',
-            border: 'none',
-            boxShadow: '0 4px 12px rgba(22,163,74,0.3)',
-            opacity: loading ? 0.6 : 1,
-          }}
+          className="btn-primary"
+          style={{ opacity: loading ? 0.6 : 1 }}
         >
-          <ArrowDownToLine className="w-4 h-4" />
-          {loading ? 'Processing...' : 'Deposit'}
+          <ArrowDownToLine className="w-5 h-5" />
+          {loading ? 'Processing...' : 'Deposit Funds'}
         </button>
       </form>
     </Modal>

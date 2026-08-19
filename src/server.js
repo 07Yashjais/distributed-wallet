@@ -9,7 +9,6 @@ const transferRoutes = require("./routes/transferRoutes");
 const transactionRoutes = require("./routes/transactionRoutes");
 const healthRoutes = require("./routes/healthRoutes");
 
-const { connectKafka } = require("./config/kafka");
 const redis = require("./config/redis");
 
 const app = express();
@@ -37,8 +36,6 @@ let server;
 const startServer = async () => {
     try {
         await connectDB();
-
-        await connectKafka();
 
         server = app.listen(PORT, () => {
             console.log(

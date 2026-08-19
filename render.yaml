@@ -12,7 +12,7 @@ services:
     plan: free
     rootDir: backend
     buildCommand: npm install
-    startCommand: npm start
+    startCommand: node database/initDB.js && npm run start:all
     healthCheckPath: /health
     envVars:
       - key: NODE_ENV
