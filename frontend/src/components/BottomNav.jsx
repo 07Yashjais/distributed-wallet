@@ -1,5 +1,5 @@
 import { useNavigate, useLocation } from 'react-router-dom';
-import { useState } from 'react';
+import { motion } from 'framer-motion';
 import {
   LayoutDashboard,
   Send,
@@ -17,73 +17,107 @@ const TABS = [
 export default function BottomNav() {
   const navigate = useNavigate();
   const location = useLocation();
-  const [tapped, setTapped] = useState(null);
 
-  const handleTap = (path, idx) => {
-    setTapped(idx);
-    navigate(path);
-    setTimeout(() => setTapped(null), 400);
-  };
+  const activeIndex = TABS.findIndex((t) => t.path === location.pathname);
+  const safeIndex = activeIndex === -1 ? 0 : activeIndex;
 
   return (
     <>
-      {/* Spacer so content doesn't hide behind the nav */}
-      <div className="lg:hidden" style={{ height: 88 }} />
+      {/* Spacer */}
+      <div className="lg:hidden" style={{ height: 100 }} />
 
       <nav
         className="fixed bottom-0 left-0 right-0 z-50 lg:hidden"
-        style={{ padding: '0 16px 12px 16px' }}
+        style={{ padding: '0 12px 10px 12px' }}
       >
         <div
           style={{
+            position: 'relative',
             display: 'flex',
             alignItems: 'center',
-            justifyContent: 'space-around',
-            height: 68,
-            borderRadius: 28,
-            background: '#FFFFFF',
-            boxShadow: '0 -4px 32px rgba(17,12,46,0.10), 0 0 0 1px rgba(240,239,251,0.6)',
-            backdropFilter: 'blur(20px)',
+            height: 72,
+            borderRadius: 32,
+            padding: '0 6px',
+            /* Liquid glass effect */
+            background: 'rgba(255, 255, 255, 0.65)',
+            backdropFilter: 'blur(24px) saturate(180%)',
+            WebkitBackdropFilter: 'blur(24px) saturate(180%)',
+            border: '1px solid rgba(255, 255, 255, 0.45)',
+            boxShadow: `
+              0 -2px 40px rgba(108, 76, 224, 0.08),
+              0 8px 32px rgba(17, 12, 46, 0.12),
+              inset 0 1px 0 rgba(255, 255, 255, 0.6),
+              inset 0 -1px 0 rgba(0, 0, 0, 0.03)
+            `,
           }}
         >
+          {/* === SLIDING PILL === */}
+          <motion.div
+            layout
+            transition={{
+              type: 'spring',
+              stiffness: 350,
+              damping: 25,
+              mass: 0.8,
+            }}
+            style={{
+              position: 'absolute',
+              top: 6,
+              bottom: 6,
+              left: `calc(${safeIndex * 25}% + 6px)`,
+              width: 'calc(25% - 12px)',
+              borderRadius: 24,
+              background: 'linear-gradient(135deg, #6C4CE0, #5B3FD6)',
+              boxShadow: `
+                0 6px 20px rgba(108, 76, 224, 0.4),
+                0 2px 8px rgba(108, 76, 224, 0.2),
+                inset 0 1px 1px rgba(255, 255, 255, 0.15)
+              `,
+              zIndex: 0,
+            }}
+          />
+
+          {/* === TAB BUTTONS === */}
           {TABS.map(({ icon: Icon, label, path }, idx) => {
-            const isActive = location.pathname === path;
-            const isBouncing = tapped === idx;
+            const isActive = idx === safeIndex;
 
             return (
-              <button
+              <motion.button
                 key={path}
-                onClick={() => handleTap(path, idx)}
+                onClick={() => navigate(path)}
+                whileTap={{ scale: 0.88 }}
+                transition={{
+                  type: 'spring',
+                  stiffness: 500,
+                  damping: 20,
+                  mass: 0.6,
+                }}
                 style={{
+                  position: 'relative',
+                  zIndex: 1,
+                  flex: 1,
                   display: 'flex',
                   flexDirection: 'column',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  gap: 4,
-                  padding: '8px 0',
+                  gap: 3,
+                  padding: '6px 0',
                   border: 'none',
                   background: 'transparent',
                   cursor: 'pointer',
-                  flex: 1,
-                  transition: 'transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1)',
-                  transform: isBouncing
-                    ? 'scale(0.85)'
-                    : isActive
-                    ? 'scale(1.08)'
-                    : 'scale(1)',
+                  WebkitTapHighlightColor: 'transparent',
                 }}
               >
-                <div
-                  style={{
-                    width: 40,
-                    height: 40,
-                    borderRadius: 14,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    transition: 'all 0.35s cubic-bezier(0.34, 1.56, 0.64, 1)',
-                    background: isActive ? '#6C4CE0' : 'transparent',
-                    boxShadow: isActive ? '0 4px 14px rgba(108,76,224,0.35)' : 'none',
+                <motion.div
+                  animate={{
+                    scale: isActive ? 1.15 : 1,
+                    y: isActive ? -1 : 0,
+                  }}
+                  transition={{
+                    type: 'spring',
+                    stiffness: 400,
+                    damping: 18,
+                    mass: 0.5,
                   }}
                 >
                   <Icon
@@ -91,23 +125,33 @@ export default function BottomNav() {
                       width: 22,
                       height: 22,
                       color: isActive ? '#FFFFFF' : '#9B98A8',
-                      transition: 'color 0.25s ease',
+                      transition: 'color 0.2s ease',
                     }}
                     strokeWidth={isActive ? 2.4 : 1.8}
                   />
-                </div>
-                <span
+                </motion.div>
+
+                <motion.span
+                  animate={{
+                    opacity: isActive ? 1 : 0.7,
+                    y: isActive ? 0 : 1,
+                  }}
+                  transition={{
+                    type: 'spring',
+                    stiffness: 300,
+                    damping: 20,
+                  }}
                   style={{
-                    fontSize: 11,
+                    fontSize: 10,
                     fontWeight: isActive ? 700 : 500,
-                    color: isActive ? '#6C4CE0' : '#9B98A8',
-                    transition: 'all 0.25s ease',
-                    letterSpacing: '0.01em',
+                    color: isActive ? '#FFFFFF' : '#9B98A8',
+                    letterSpacing: '0.02em',
+                    transition: 'color 0.2s ease',
                   }}
                 >
                   {label}
-                </span>
-              </button>
+                </motion.span>
+              </motion.button>
             );
           })}
         </div>
