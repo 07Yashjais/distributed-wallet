@@ -5,8 +5,8 @@ const getApiBase = () => {
   if (import.meta.env.DEV) {
     return "http://localhost:5000/api";
   }
-  // Production fallback: relative /api for reverse proxy or CloudFront
-  return "/api";
+  // Production fallback to deployed Render backend
+  return "https://distributed-wallet.onrender.com/api";
 };
 
 const API_BASE = getApiBase();
