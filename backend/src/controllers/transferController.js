@@ -1,7 +1,10 @@
 const { v4: uuidv4 } = require("uuid");
 const { pool } = require("../config/db");
-const rateLimiter = require("../middleware/rateLimiter");
-
+const {
+    validateAmount,
+    validateUUID,
+    validateIdempotencyKey
+} = require("../utils/validation");
 
 const transfer = async (req, res) => {
     const client = await pool.connect();
@@ -9,46 +12,25 @@ const transfer = async (req, res) => {
     try {
         const senderUserId = req.user.userId;
         const { receiverWalletId, amount } = req.body;
-        const transferAmount = Number(amount);
-
-        if (!receiverWalletId || !transferAmount || transferAmount <= 0) {
-    return res.status(400).json({
-        message: "Invalid receiver wallet or amount"
-    });
-}
-        // -----------------------------
-        // 1. Get idempotency key
-        // -----------------------------
-
-        const idempotencyKey = req.headers["idempotency-key"];
-
+        const idempotencyKey = validateIdempotencyKey(req.headers["idempotency-key"]);
         if (!idempotencyKey) {
             return res.status(400).json({
-                message: "Idempotency-Key header is required"
+                message: "Idempotency-Key header is required and must be between 1 and 255 characters"
             });
         }
 
-        if (idempotencyKey.length > 255) {
+        // 2. Validate receiver wallet ID format
+        if (!validateUUID(receiverWalletId)) {
             return res.status(400).json({
-                message: "Idempotency-Key is too long"
+                message: "Invalid receiver wallet ID format"
             });
         }
 
-        // -----------------------------
-        // 2. Validate request
-        // -----------------------------
-
-        if (!receiverWalletId || amount === undefined) {
+        // 3. Validate transfer amount
+        const transferAmount = validateAmount(amount);
+        if (!transferAmount) {
             return res.status(400).json({
-                message: "Receiver wallet and amount are required"
-            });
-        }
-
-        
-
-        if (!Number.isFinite(transferAmount) || transferAmount <= 0) {
-            return res.status(400).json({
-                message: "Amount must be greater than zero"
+                message: "Amount must be a positive number with at most 2 decimal places"
             });
         }
 

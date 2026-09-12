@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { useLocation } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
 import Sidebar from '../components/Sidebar';
 import Topbar from '../components/Topbar';
@@ -35,6 +35,7 @@ function useIsDesktop() {
 
 export default function DashboardLayout() {
   const location = useLocation();
+  const navigate = useNavigate();
   const currentPath = location.pathname;
   const isDesktop = useIsDesktop();
 
@@ -75,6 +76,7 @@ export default function DashboardLayout() {
     setActiveAction(action);
     if (action === 'deposit') setDepositOpen(true);
     if (action === 'withdraw') setWithdrawOpen(true);
+    if (action === 'send') navigate('/send');
   };
 
   if (loading) {

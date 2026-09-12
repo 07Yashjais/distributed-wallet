@@ -5,6 +5,12 @@ const { pool } = require("../config/db");
 
 
 
+const {
+    validateEmail,
+    validatePassword,
+    validateName
+} = require("../utils/validation");
+
 const register = async (req, res) => {
     try {
         const { name, email, password } = req.body;
@@ -15,9 +21,29 @@ const register = async (req, res) => {
             });
         }
 
+        if (!validateName(name)) {
+            return res.status(400).json({
+                message: "Name must be between 2 and 100 characters"
+            });
+        }
+
+        if (!validateEmail(email)) {
+            return res.status(400).json({
+                message: "Invalid email format"
+            });
+        }
+
+        if (!validatePassword(password)) {
+            return res.status(400).json({
+                message: "Password must be at least 6 characters long"
+            });
+        }
+
+        const normalizedEmail = email.trim().toLowerCase();
+
         const existingUser = await pool.query(
             "SELECT id FROM users WHERE email = $1",
-            [email]
+            [normalizedEmail]
         );
 
         if (existingUser.rows.length > 0) {
@@ -35,7 +61,7 @@ const register = async (req, res) => {
             (id, name, email, password_hash)
             VALUES ($1, $2, $3, $4)
             RETURNING id, name, email, created_at`,
-            [userId, name, email, passwordHash]
+            [userId, name.trim(), normalizedEmail, passwordHash]
         );
 
         res.status(201).json({
@@ -44,16 +70,13 @@ const register = async (req, res) => {
         });
 
     } catch (error) {
-        console.error(error);
+        console.error("Registration error:", error);
 
         res.status(500).json({
-            message: "Internal server error: " + error.message
+            message: "Registration failed. Please try again later."
         });
     }
 };
-
-
-
 
 const login = async (req, res) => {
     try {
@@ -65,11 +88,19 @@ const login = async (req, res) => {
             });
         }
 
+        if (!validateEmail(email)) {
+            return res.status(400).json({
+                message: "Invalid email format"
+            });
+        }
+
+        const normalizedEmail = email.trim().toLowerCase();
+
         const result = await pool.query(
             `SELECT id, name, email, password_hash
              FROM users
              WHERE email = $1`,
-            [email]
+            [normalizedEmail]
         );
 
         if (result.rows.length === 0) {
@@ -113,10 +144,10 @@ const login = async (req, res) => {
         });
 
     } catch (error) {
-        console.error(error);
+        console.error("Login error:", error);
 
         res.status(500).json({
-            message: "Internal server error: " + error.message
+            message: "Login failed. Please try again later."
         });
     }
 };

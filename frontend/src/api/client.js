@@ -1,4 +1,15 @@
-const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:5000/api";
+const getApiBase = () => {
+  if (import.meta.env.VITE_API_URL) {
+    return import.meta.env.VITE_API_URL.replace(/\/$/, "");
+  }
+  if (import.meta.env.DEV) {
+    return "http://localhost:5000/api";
+  }
+  // Production fallback: relative /api for reverse proxy or CloudFront
+  return "/api";
+};
+
+const API_BASE = getApiBase();
 
 async function request(endpoint, options = {}) {
   const token = localStorage.getItem('token');
@@ -62,31 +73,41 @@ export const api = {
     create: () =>
       request('/wallet', { method: 'POST' }),
 
-    deposit: (amount) =>
+    deposit: (amount, idempotencyKey) =>
       request('/wallet/deposit', {
         method: 'POST',
+        headers: {
+          'Idempotency-Key': idempotencyKey || `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+        },
         body: JSON.stringify({ amount }),
       }),
 
-    withdraw: (amount) =>
+    withdraw: (amount, idempotencyKey) =>
       request('/wallet/withdraw', {
         method: 'POST',
+        headers: {
+          'Idempotency-Key': idempotencyKey || `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+        },
         body: JSON.stringify({ amount }),
       }),
   },
 
   transfers: {
-    send: (receiverWalletId, amount) =>
+    send: (receiverWalletId, amount, idempotencyKey) =>
       request('/transfers', {
         method: 'POST',
         headers: {
-          'Idempotency-Key': `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+          'Idempotency-Key': idempotencyKey || `${Date.now()}-${Math.random().toString(36).slice(2)}`,
         },
         body: JSON.stringify({ receiverWalletId, amount }),
       }),
   },
 
   transactions: {
-    getAll: () => request('/transactions'),
+    getAll: (params = {}) => {
+      const query = new URLSearchParams(params).toString();
+      return request(`/transactions${query ? `?${query}` : ''}`);
+    },
   },
 };
+

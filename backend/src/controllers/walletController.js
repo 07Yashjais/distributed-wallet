@@ -1,5 +1,6 @@
 const { v4: uuidv4 } = require("uuid");
 const { pool } = require("../config/db");
+const { validateAmount, validateIdempotencyKey } = require("../utils/validation");
 
 
 // ==========================================
@@ -43,7 +44,7 @@ const createWallet = async (req, res) => {
         console.error("Create wallet error:", error);
 
         res.status(500).json({
-            message: "Internal server error"
+            message: "Failed to create wallet. Please try again later."
         });
     }
 };
@@ -78,7 +79,7 @@ const getWallet = async (req, res) => {
         console.error("Get wallet error:", error);
 
         res.status(500).json({
-            message: "Internal server error"
+            message: "Failed to fetch wallet. Please try again later."
         });
     }
 };
@@ -88,6 +89,40 @@ const getWallet = async (req, res) => {
 // DEPOSIT
 // ==========================================
 
+const getExistingTxResponse = async (client, idempotencyKey) => {
+    const txRes = await client.query(
+        `SELECT id, reference_id, transaction_type, status
+         FROM transactions
+         WHERE idempotency_key = $1`,
+        [idempotencyKey]
+    );
+
+    if (txRes.rows.length === 0) return null;
+
+    const tx = txRes.rows[0];
+    const details = await client.query(
+        `SELECT le.amount, w.id AS wallet_id, w.balance, w.currency
+         FROM ledger_entries le
+         JOIN wallets w ON w.id = le.wallet_id
+         WHERE le.transaction_id = $1
+         LIMIT 1`,
+        [tx.id]
+    );
+    const d = details.rows[0] || {};
+    return {
+        message: "Transaction already processed",
+        transaction: tx,
+        transactionId: tx.id,
+        referenceId: tx.reference_id,
+        amount: d.amount ? Number(d.amount) : undefined,
+        wallet: d.wallet_id ? {
+            id: d.wallet_id,
+            balance: d.balance,
+            currency: d.currency
+        } : undefined
+    };
+};
+
 const deposit = async (req, res) => {
     const client = await pool.connect();
 
@@ -95,21 +130,39 @@ const deposit = async (req, res) => {
         const userId = req.user.userId;
         const { amount } = req.body;
 
-        if (amount === undefined) {
+        const depositAmount = validateAmount(amount);
+        if (!depositAmount) {
             return res.status(400).json({
-                message: "Amount is required"
+                message: "Invalid deposit amount. Must be a positive number with at most 2 decimal places."
             });
         }
 
-        const depositAmount = Number(amount);
-
-        if (!Number.isFinite(depositAmount) || depositAmount <= 0) {
+        const rawKey = req.headers["idempotency-key"];
+        const idempotencyKey = rawKey ? validateIdempotencyKey(rawKey) : null;
+        if (rawKey && !idempotencyKey) {
             return res.status(400).json({
-                message: "Amount must be greater than zero"
+                message: "Invalid Idempotency-Key. Must be between 1 and 255 characters."
             });
         }
 
         await client.query("BEGIN");
+
+        // Check idempotency if key provided
+        if (idempotencyKey) {
+            const existingTx = await client.query(
+                `SELECT id, reference_id, transaction_type, status
+                 FROM transactions
+                 WHERE idempotency_key = $1
+                 FOR UPDATE`,
+                [idempotencyKey]
+            );
+
+            if (existingTx.rows.length > 0) {
+                const responseData = await getExistingTxResponse(client, idempotencyKey);
+                await client.query("ROLLBACK");
+                return res.status(200).json(responseData);
+            }
+        }
 
         // Lock wallet
         const walletResult = await client.query(
@@ -141,17 +194,16 @@ const deposit = async (req, res) => {
 
         // Create transaction
         const transactionId = uuidv4();
-
-        const referenceId =
-            `DEP-${Date.now()}-${uuidv4()}`;
+        const referenceId = `DEP-${Date.now()}-${uuidv4()}`;
 
         await client.query(
             `INSERT INTO transactions
-            (id, reference_id, transaction_type, status)
-            VALUES ($1, $2, 'DEPOSIT', 'COMPLETED')`,
+            (id, reference_id, transaction_type, status, idempotency_key)
+            VALUES ($1, $2, 'DEPOSIT', 'COMPLETED', $3)`,
             [
                 transactionId,
-                referenceId
+                referenceId,
+                idempotencyKey
             ]
         );
 
@@ -168,6 +220,28 @@ const deposit = async (req, res) => {
             ]
         );
 
+        // Insert Transactional Outbox Event
+        await client.query(
+            `INSERT INTO outbox_events
+            (id, event_type, aggregate_type, aggregate_id, payload)
+            VALUES ($1, $2, $3, $4, $5)`,
+            [
+                uuidv4(),
+                "DEPOSIT_COMPLETED",
+                "TRANSACTION",
+                transactionId,
+                JSON.stringify({
+                    event: "DEPOSIT_COMPLETED",
+                    transactionId,
+                    referenceId,
+                    walletId: wallet.id,
+                    userId,
+                    amount: depositAmount,
+                    timestamp: new Date().toISOString()
+                })
+            ]
+        );
+
         await client.query("COMMIT");
 
         res.status(200).json({
@@ -179,20 +253,28 @@ const deposit = async (req, res) => {
         });
 
     } catch (error) {
-
         try {
             await client.query("ROLLBACK");
         } catch (rollbackError) {
-            console.error(
-                "Rollback error:",
-                rollbackError.message
-            );
+            console.error("Rollback error:", rollbackError.message);
+        }
+
+        // Concurrent duplicate idempotency key race handling
+        if (error.code === "23505" && req.headers["idempotency-key"]) {
+            try {
+                const existingResponse = await getExistingTxResponse(client, req.headers["idempotency-key"]);
+                if (existingResponse) {
+                    return res.status(200).json(existingResponse);
+                }
+            } catch (lookupError) {
+                console.error("Idempotency lookup error:", lookupError.message);
+            }
         }
 
         console.error("Deposit error:", error);
 
         res.status(500).json({
-            message: "Deposit failed"
+            message: "Deposit failed. Please try again later."
         });
 
     } finally {
@@ -212,21 +294,39 @@ const withdraw = async (req, res) => {
         const userId = req.user.userId;
         const { amount } = req.body;
 
-        if (amount === undefined) {
+        const withdrawAmount = validateAmount(amount);
+        if (!withdrawAmount) {
             return res.status(400).json({
-                message: "Amount is required"
+                message: "Invalid withdrawal amount. Must be a positive number with at most 2 decimal places."
             });
         }
 
-        const withdrawAmount = Number(amount);
-
-        if (!Number.isFinite(withdrawAmount) || withdrawAmount <= 0) {
+        const rawKey = req.headers["idempotency-key"];
+        const idempotencyKey = rawKey ? validateIdempotencyKey(rawKey) : null;
+        if (rawKey && !idempotencyKey) {
             return res.status(400).json({
-                message: "Amount must be greater than zero"
+                message: "Invalid Idempotency-Key. Must be between 1 and 255 characters."
             });
         }
 
         await client.query("BEGIN");
+
+        // Check idempotency if key provided
+        if (idempotencyKey) {
+            const existingTx = await client.query(
+                `SELECT id, reference_id, transaction_type, status
+                 FROM transactions
+                 WHERE idempotency_key = $1
+                 FOR UPDATE`,
+                [idempotencyKey]
+            );
+
+            if (existingTx.rows.length > 0) {
+                const responseData = await getExistingTxResponse(client, idempotencyKey);
+                await client.query("ROLLBACK");
+                return res.status(200).json(responseData);
+            }
+        }
 
         // Lock wallet
         const walletResult = await client.query(
@@ -262,25 +362,21 @@ const withdraw = async (req, res) => {
              SET balance = balance - $1
              WHERE id = $2
              RETURNING id, balance, currency`,
-            [
-                withdrawAmount,
-                wallet.id
-            ]
+            [withdrawAmount, wallet.id]
         );
 
         // Create transaction
         const transactionId = uuidv4();
-
-        const referenceId =
-            `WDR-${Date.now()}-${uuidv4()}`;
+        const referenceId = `WDR-${Date.now()}-${uuidv4()}`;
 
         await client.query(
             `INSERT INTO transactions
-            (id, reference_id, transaction_type, status)
-            VALUES ($1, $2, 'WITHDRAW', 'COMPLETED')`,
+            (id, reference_id, transaction_type, status, idempotency_key)
+            VALUES ($1, $2, 'WITHDRAW', 'COMPLETED', $3)`,
             [
                 transactionId,
-                referenceId
+                referenceId,
+                idempotencyKey
             ]
         );
 
@@ -297,6 +393,28 @@ const withdraw = async (req, res) => {
             ]
         );
 
+        // Insert Transactional Outbox Event
+        await client.query(
+            `INSERT INTO outbox_events
+            (id, event_type, aggregate_type, aggregate_id, payload)
+            VALUES ($1, $2, $3, $4, $5)`,
+            [
+                uuidv4(),
+                "WITHDRAWAL_COMPLETED",
+                "TRANSACTION",
+                transactionId,
+                JSON.stringify({
+                    event: "WITHDRAWAL_COMPLETED",
+                    transactionId,
+                    referenceId,
+                    walletId: wallet.id,
+                    userId,
+                    amount: withdrawAmount,
+                    timestamp: new Date().toISOString()
+                })
+            ]
+        );
+
         await client.query("COMMIT");
 
         res.status(200).json({
@@ -308,20 +426,28 @@ const withdraw = async (req, res) => {
         });
 
     } catch (error) {
-
         try {
             await client.query("ROLLBACK");
         } catch (rollbackError) {
-            console.error(
-                "Rollback error:",
-                rollbackError.message
-            );
+            console.error("Rollback error:", rollbackError.message);
+        }
+
+        // Concurrent duplicate idempotency key race handling
+        if (error.code === "23505" && req.headers["idempotency-key"]) {
+            try {
+                const existingResponse = await getExistingTxResponse(client, req.headers["idempotency-key"]);
+                if (existingResponse) {
+                    return res.status(200).json(existingResponse);
+                }
+            } catch (lookupError) {
+                console.error("Idempotency lookup error:", lookupError.message);
+            }
         }
 
         console.error("Withdraw error:", error);
 
         res.status(500).json({
-            message: "Withdrawal failed"
+            message: "Withdrawal failed. Please try again later."
         });
 
     } finally {

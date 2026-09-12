@@ -1,3 +1,4 @@
+require("dotenv").config();
 const { Pool } = require("pg");
 
 const useSSL = process.env.DATABASE_SSL === 'true' || 
@@ -5,7 +6,10 @@ const useSSL = process.env.DATABASE_SSL === 'true' ||
 
 const pool = new Pool({
     connectionString: process.env.DATABASE_URL,
-    ssl: useSSL ? { rejectUnauthorized: false } : false
+    ssl: useSSL ? { rejectUnauthorized: false } : false,
+    max: parseInt(process.env.DB_POOL_MAX || "20", 10),
+    idleTimeoutMillis: 30000,
+    connectionTimeoutMillis: 10000
 });
 
 const connectDB = async () => {
@@ -16,8 +20,9 @@ const connectDB = async () => {
 
         client.release();
     } catch (error) {
-        console.error("PostgreSQL connection failed:");
+        console.error("PostgreSQL connection failed during startup:");
         console.error(error.message);
+        throw new Error(`Database connection failed: ${error.message}`);
     }
 };
 

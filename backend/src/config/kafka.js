@@ -1,55 +1,40 @@
-const fs = require("fs");
-const path = require("path");
+require("dotenv").config();
+
+process.env.KAFKAJS_NO_PARTITIONER_WARNING = "1";
+
 const { Kafka, Partitioners } = require("kafkajs");
 
-const brokers = (process.env.KAFKA_BROKER || "localhost:9092")
-    .split(",")
-    .map(b => b.trim())
-    .filter(Boolean);
+const createKafkaConfig = (clientId = "distributed-wallet") => {
+    const brokers = (process.env.KAFKA_BROKER || process.env.KAFKA_BROKERS || "")
+        .split(",")
+        .map(b => b.trim())
+        .filter(Boolean);
 
-const useSSL = process.env.KAFKA_SSL === "true" ||
-    brokers.some(b =>
-        b.includes("upstash.io") ||
-        b.includes("confluent.cloud") ||
-        b.includes("aivencloud.com")
-    );
+    const username = process.env.KAFKA_SASL_USERNAME || process.env.KAFKA_USERNAME;
+    const password = process.env.KAFKA_SASL_PASSWORD || process.env.KAFKA_PASSWORD;
+    const mechanism = (process.env.KAFKA_SASL_MECHANISM || "scram-sha-256").toLowerCase();
 
-const kafkaConfig = {
-    clientId: "distributed-wallet",
-    brokers,
+    const kafkaConfig = {
+        clientId,
+        brokers,
+        ssl: true,
+        sasl: {
+            mechanism,
+            username,
+            password
+        },
+        connectionTimeout: 10000,
+        requestTimeout: 25000,
+        retry: {
+            initialRetryTime: 500,
+            retries: 15
+        }
+    };
 
-    retry: {
-        initialRetryTime: 500,
-        retries: 15
-    }
+    return kafkaConfig;
 };
 
-if (useSSL) {
-    kafkaConfig.ssl = {
-        ca: [
-            fs.readFileSync(
-                path.join(__dirname, "../../certs/ca.pem"),
-                "utf-8"
-            )
-        ]
-    };
-}
-
-if (
-    process.env.KAFKA_SASL_USERNAME &&
-    process.env.KAFKA_SASL_PASSWORD
-) {
-    kafkaConfig.sasl = {
-        mechanism: (
-            process.env.KAFKA_SASL_MECHANISM || "plain"
-        ).toLowerCase(),
-
-        username: process.env.KAFKA_SASL_USERNAME,
-        password: process.env.KAFKA_SASL_PASSWORD
-    };
-}
-
-const kafka = new Kafka(kafkaConfig);
+const kafka = new Kafka(createKafkaConfig("distributed-wallet"));
 
 const producer = kafka.producer({
     createPartitioner: Partitioners.LegacyPartitioner
@@ -90,7 +75,6 @@ const publishEvent = async (topic, event) => {
 
     await producer.send({
         topic,
-
         messages: [
             {
                 key: event.transactionId || undefined,
@@ -100,8 +84,48 @@ const publishEvent = async (topic, event) => {
     });
 };
 
+let lastKafkaCheck = 0;
+let lastKafkaStatus = "down";
+const KAFKA_CHECK_CACHE_MS = 5000;
+
+const checkKafkaHealth = async () => {
+    const now = Date.now();
+
+    if (now - lastKafkaCheck < KAFKA_CHECK_CACHE_MS) {
+        return lastKafkaStatus;
+    }
+
+    const admin = kafka.admin();
+
+    try {
+        await Promise.race([
+            admin.connect(),
+            new Promise((_, reject) =>
+                setTimeout(
+                    () => reject(new Error("Kafka health check timeout")),
+                    3000
+                )
+            )
+        ]);
+
+        lastKafkaStatus = "up";
+    } catch (err) {
+        lastKafkaStatus = "down";
+    } finally {
+        try {
+            await admin.disconnect();
+        } catch {}
+        
+        lastKafkaCheck = Date.now();
+    }
+
+    return lastKafkaStatus;
+};
+
 module.exports = {
     producer,
     connectKafka,
-    publishEvent
+    publishEvent,
+    createKafkaConfig,
+    checkKafkaHealth
 };

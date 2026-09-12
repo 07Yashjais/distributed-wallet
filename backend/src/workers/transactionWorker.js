@@ -1,35 +1,8 @@
+require("dotenv").config();
 const { Kafka } = require("kafkajs");
+const { createKafkaConfig } = require("../config/kafka");
 
-const brokers = (process.env.KAFKA_BROKER || "localhost:9092")
-    .split(",")
-    .map(b => b.trim())
-    .filter(Boolean);
-
-const useSSL = process.env.KAFKA_SSL === "true" ||
-    brokers.some(b => b.includes("upstash.io") || b.includes("confluent.cloud") || b.includes("aivencloud.com"));
-
-const kafkaConfig = {
-    clientId: "transaction-worker",
-    brokers,
-    retry: {
-        initialRetryTime: 500,
-        retries: 15
-    }
-};
-
-if (useSSL) {
-    kafkaConfig.ssl = true;
-}
-
-if (process.env.KAFKA_SASL_USERNAME && process.env.KAFKA_SASL_PASSWORD) {
-    kafkaConfig.sasl = {
-        mechanism: (process.env.KAFKA_SASL_MECHANISM || "scram-sha-256").toLowerCase(),
-        username: process.env.KAFKA_SASL_USERNAME,
-        password: process.env.KAFKA_SASL_PASSWORD
-    };
-}
-
-const kafka = new Kafka(kafkaConfig);
+const kafka = new Kafka(createKafkaConfig("transaction-worker"));
 
 const admin = kafka.admin();
 const consumer = kafka.consumer({
@@ -43,7 +16,7 @@ const ensureTopicExists = async (topicName) => {
         if (!topics.includes(topicName)) {
             console.log(`Creating Kafka topic '${topicName}'...`);
             await admin.createTopics({
-                topics: [{ topic: topicName, numPartitions: 3, replicationFactor: 1 }]
+                topics: [{ topic: topicName, numPartitions: 3 }]
             });
             console.log(`Kafka topic '${topicName}' created successfully.`);
         }
@@ -95,5 +68,23 @@ const startWorker = async (maxRetries = 15, delayMs = 2000) => {
         }
     }
 };
+
+let isShuttingDown = false;
+
+const shutdown = async (signal) => {
+    if (isShuttingDown) return;
+    isShuttingDown = true;
+    console.log(`${signal} received. Shutting down transaction worker...`);
+    try {
+        await consumer.disconnect();
+        console.log("Kafka consumer disconnected cleanly.");
+    } catch (err) {
+        console.error("Error disconnecting Kafka consumer:", err.message);
+    }
+    process.exit(0);
+};
+
+process.on("SIGTERM", () => shutdown("SIGTERM"));
+process.on("SIGINT", () => shutdown("SIGINT"));
 
 startWorker();

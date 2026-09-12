@@ -1,5 +1,6 @@
 const express = require("express");
 require("dotenv").config();
+const cors = require("cors");
 
 const { connectDB, pool } = require("./config/db");
 
@@ -9,25 +10,42 @@ const transferRoutes = require("./routes/transferRoutes");
 const transactionRoutes = require("./routes/transactionRoutes");
 const healthRoutes = require("./routes/healthRoutes");
 
+const helmet = require("helmet");
 const redis = require("./config/redis");
-const { connectKafka } = require("./config/kafka");
+
 const app = express();
 
-app.use(express.json());
+app.use(helmet());
 
-app.use((req, res, next) => {
-    const origin = process.env.CORS_ORIGIN === "*"
-        ? "*"
-        : (process.env.CORS_ORIGIN || req.headers.origin || "http://localhost:5173");
-    res.header("Access-Control-Allow-Origin", origin);
-    res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
-    res.header("Access-Control-Allow-Headers", "Content-Type, Authorization, Idempotency-Key");
-    res.header("Access-Control-Allow-Credentials", "true");
-    if (req.method === "OPTIONS") {
-        return res.sendStatus(200);
-    }
-    next();
-});
+const isProd = process.env.NODE_ENV === "production";
+
+const allowedOrigins = (process.env.CORS_ORIGIN || (isProd ? "" : "http://localhost:5173"))
+    .split(",")
+    .map(o => o.trim().replace(/\/$/, ""))
+    .filter(Boolean);
+
+app.use(cors({
+    origin: (origin, callback) => {
+        // Allow requests without Origin (like curl, mobile apps, server-to-server)
+        if (!origin) return callback(null, true);
+
+        if (allowedOrigins.includes(origin) || (!isProd && allowedOrigins.includes("*"))) {
+            return callback(null, true);
+        }
+
+        // Return false to deny CORS cleanly without throwing a 500 Error
+        return callback(null, false);
+    },
+    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allowedHeaders: [
+        "Content-Type",
+        "Authorization",
+        "Idempotency-Key"
+    ],
+    credentials: true
+}));
+
+app.use(express.json());
 
 
 app.use("/api/auth", authRoutes);
@@ -37,11 +55,14 @@ app.use("/api/transactions", transactionRoutes);
 
 app.use("/health", healthRoutes);
 
+
 app.get("/", (req, res) => {
     res.json({
         message: "Distributed Wallet API is running"
     });
 });
+
+
 
 const PORT = process.env.PORT || 5000;
 
@@ -50,9 +71,6 @@ let server;
 const startServer = async () => {
     try {
         await connectDB();
-
-        await connectKafka();
-
 
         server = app.listen(PORT, () => {
             console.log(`Server running on port ${PORT}`);
@@ -68,33 +86,26 @@ const startServer = async () => {
     }
 };
 
-
 const shutdown = async (signal) => {
-
-    console.log(
-        `${signal} received. Shutting down...`
-    );
+    console.log(`${signal} received. Shutting down...`);
 
     if (!server) {
         process.exit(0);
     }
 
     server.close(async () => {
-
         try {
-
+            // Close PostgreSQL
             await pool.end();
 
+            // Close Redis
             await redis.quit();
 
-            console.log(
-                "Connections closed."
-            );
+            console.log("Connections closed.");
 
             process.exit(0);
 
         } catch (error) {
-
             console.error(
                 "Shutdown error:",
                 error.message
@@ -105,15 +116,9 @@ const shutdown = async (signal) => {
     });
 };
 
-process.on(
-    "SIGTERM",
-    () => shutdown("SIGTERM")
-);
 
-process.on(
-    "SIGINT",
-    () => shutdown("SIGINT")
-);
+process.on("SIGTERM", () => shutdown("SIGTERM"));
+process.on("SIGINT", () => shutdown("SIGINT"));
 
 
 startServer();

@@ -24,7 +24,7 @@ const sendTransfer = async (index) => {
 
             headers: {
                 "Content-Type": "application/json",
-                "Authorization": `Bearer ${YASH_JWT}`,
+                "Authorization": `Bearer ${TestUser_JWT}`,
                 "Idempotency-Key": idempotencyKey
             },
 
